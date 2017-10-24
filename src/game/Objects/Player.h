@@ -46,6 +46,7 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 
 struct Mail;
 class Channel;
@@ -509,7 +510,7 @@ enum BankItemSlots                                          // 28 slots
     BANK_SLOT_ITEM_END          = 63
 };
 
-enum BankBagSlots                                           // 7 slots
+enum BankBagSlots                                           // 6 slots
 {
     BANK_SLOT_BAG_START         = 63,
     BANK_SLOT_BAG_END           = 69
@@ -737,7 +738,7 @@ class TradeData
     public:                                                 // constructors
         TradeData(Player* player, Player* trader) :
             m_player(player),  m_trader(trader), m_accepted(false), m_acceptProccess(false),
-            m_money(0), m_spell(0), m_lastModificationTime(0){}
+            m_money(0), m_spell(0), m_lastModificationTime(0), m_scamPreventionDelay(0){}
 
     public:                                                 // access functions
 
@@ -762,6 +763,9 @@ class TradeData
 
         time_t GetLastModificationTime() const { return m_lastModificationTime; }
         void SetLastModificationTime(time_t t) { m_lastModificationTime = t; }
+
+		time_t GetScamPreventionDelay() const { return m_scamPreventionDelay; }
+		void SetScamPreventionDelay(time_t t) { m_scamPreventionDelay = t; }
     public:                                                 // access functions
 
         void SetItem(TradeSlots slot, Item* item);
@@ -793,6 +797,7 @@ class TradeData
         ObjectGuid m_items[TRADE_SLOT_COUNT];               // traded itmes from m_player side including non-traded slot
 
         time_t     m_lastModificationTime;                  // to prevent scam (change gold before the other validates)
+		time_t	   m_scamPreventionDelay;					// to prevent scam, set a delay in milliseconds (CANNOT be less than or equal to 10ms) before accepting trade.
 };
 
 struct CinematicWaypointEntry
@@ -849,14 +854,16 @@ class MANGOS_DLL_SPEC Player final: public Unit
          * Should be called in a thread-safe environnement (not in map update for example !)
          */
         bool SwitchInstance(uint32 newInstanceId);
-        bool TeleportTo(uint32 mapid, float x, float y, float z, float orientation, uint32 options = 0);
+        bool TeleportTo(uint32 mapid, float x, float y, float z, float orientation, uint32 options = 0, std::function<void()> recover = std::function<void()>());
 
-        bool TeleportTo(WorldLocation const &loc, uint32 options = 0)
+        bool TeleportTo(WorldLocation const &loc, uint32 options = 0, std::function<void()> recover = std::function<void()>())
         {
-            return TeleportTo(loc.mapid, loc.coord_x, loc.coord_y, loc.coord_z, loc.orientation, options);
+            return TeleportTo(loc.mapid, loc.coord_x, loc.coord_y, loc.coord_z, loc.orientation, options, recover);
         }
 
         bool TeleportToBGEntryPoint();
+
+        void restorePendingTeleport();
 
         void SetSummonPoint(uint32 mapid, float x, float y, float z)
         {
@@ -871,6 +878,8 @@ class MANGOS_DLL_SPEC Player final: public Unit
         bool Create( uint32 guidlow, const std::string& name, uint8 race, uint8 class_, uint8 gender, uint8 skin, uint8 face, uint8 hairStyle, uint8 hairColor, uint8 facialHair, uint8 outfitId );
 
         void Update(uint32 update_diff, uint32 time) override;
+        void SetTransport(Transport * t) override;
+        void DismountCheck();
 
         static bool BuildEnumData( QueryResult * result,  WorldPacket * p_data );
 
@@ -1017,7 +1026,7 @@ class MANGOS_DLL_SPEC Player final: public Unit
         /***                    STORAGE SYSTEM                 ***/
         /*********************************************************/
 
-        Item* AddItem(uint32 itemId, uint32 count);
+        Item* AddItem(uint32 itemId, uint32 count = 1);
 
         void InterruptSpellsWithCastItem(Item* item);
         void SetVirtualItemSlot( uint8 i, Item* item);
@@ -1192,7 +1201,7 @@ class MANGOS_DLL_SPEC Player final: public Unit
         bool IsCurrentQuest(uint32 quest_id, uint8 completedOrNot = 0) const;
         Quest const *GetNextQuest(ObjectGuid guid, Quest const *pQuest );
         bool CanSeeStartQuest( Quest const *pQuest ) const;
-        bool CanTakeQuest( Quest const *pQuest, bool msg ) const;
+        bool CanTakeQuest( Quest const *pQuest, bool msg, bool skipStatusCheck = false ) const;
         bool CanAddQuest( Quest const *pQuest, bool msg ) const;
         bool CanCompleteQuest( uint32 quest_id ) const;
         bool CanCompleteRepeatableQuest(Quest const *pQuest) const;
@@ -1220,8 +1229,9 @@ class MANGOS_DLL_SPEC Player final: public Unit
         bool SatisfyQuestPrevChain( Quest const* qInfo, bool msg ) const;
         bool CanGiveQuestSourceItemIfNeed( Quest const *pQuest, ItemPosCountVec* dest = NULL) const;
         void GiveQuestSourceItemIfNeed(Quest const *pQuest);
-        bool TakeQuestSourceItem( uint32 quest_id, bool msg );
+        bool TakeOrReplaceQuestStartItems( uint32 quest_id, bool msg, bool giveQuestStartItem );
         bool GetQuestRewardStatus( uint32 quest_id ) const;
+        const QuestStatusData* GetQuestStatusData(uint32 quest_id) const;
         QuestStatus GetQuestStatus( uint32 quest_id ) const;
         void SetQuestStatus( uint32 quest_id, QuestStatus status );
 
@@ -1262,6 +1272,7 @@ class MANGOS_DLL_SPEC Player final: public Unit
         uint32 GetReqKillOrCastCurrentCount(uint32 quest_id, int32 entry);
         void AreaExploredOrEventHappens( uint32 questId );
         void GroupEventHappens( uint32 questId, WorldObject const* pEventObject );
+        void GroupEventFailHappens( uint32 questId );
         void ItemAddedQuestCheck( uint32 entry, uint32 count );
         void ItemRemovedQuestCheck( uint32 entry, uint32 count );
         void KilledMonster( CreatureInfo const* cInfo, ObjectGuid guid );
@@ -1403,7 +1414,8 @@ class MANGOS_DLL_SPEC Player final: public Unit
         void SetFreeTalentPoints(uint32 points) { SetUInt32Value(PLAYER_CHARACTER_POINTS1,points); }
         void UpdateFreeTalentPoints(bool resetIfNeed = true);
         bool resetTalents(bool no_cost = false);
-        uint32 resetTalentsCost() const;
+        uint32 resetTalentsCost();
+        void updateResetTalentsMultiplier();
         void InitTalentForLevel();
         void LearnTalent(uint32 talentId, uint32 talentRank);
         uint32 CalculateTalentsPoints() const;
@@ -1551,7 +1563,7 @@ class MANGOS_DLL_SPEC Player final: public Unit
         ObjectGuid const& GetLootGuid() const { return m_lootGuid; }
         void SetLootGuid(ObjectGuid const& guid) { m_lootGuid = guid; }
 
-        void RemovedInsignia(Player* looterPlr);
+        void RemovedInsignia(Player* looterPlr, Corpse *corpse);
 
         WorldSession* GetSession() const { return m_session; }
         void SetSession(WorldSession *s);
@@ -1639,8 +1651,8 @@ class MANGOS_DLL_SPEC Player final: public Unit
         bool IsBeingTeleported() const { return mSemaphoreTeleport_Near || mSemaphoreTeleport_Far; }
         bool IsBeingTeleportedNear() const { return mSemaphoreTeleport_Near; }
         bool IsBeingTeleportedFar() const { return mSemaphoreTeleport_Far; }
-        void SetSemaphoreTeleportNear(bool semphsetting) { mSemaphoreTeleport_Near = semphsetting; }
-        void SetSemaphoreTeleportFar(bool semphsetting) { mSemaphoreTeleport_Far = semphsetting; }
+        void SetSemaphoreTeleportNear(bool semphsetting);
+        void SetSemaphoreTeleportFar(bool semphsetting);
         void ProcessDelayedOperations();
 
         void CheckAreaExploreAndOutdoor(void);
@@ -1909,6 +1921,7 @@ class MANGOS_DLL_SPEC Player final: public Unit
         float m_modManaRegen;
         float m_modManaRegenInterrupt;
         float m_SpellCritPercentage[MAX_SPELL_SCHOOL];
+        float m_carryHealthRegen;
 
         bool HasMovementFlag(MovementFlags f) const;        // for script access to m_movementInfo.HasMovementFlag
         void UpdateFallInformationIfNeed(MovementInfo const& minfo,uint16 opcode);
@@ -1925,7 +1938,7 @@ class MANGOS_DLL_SPEC Player final: public Unit
         void SetClientControl(Unit* target, uint8 allowMove);
         void SetMover(Unit* target) { m_mover = target ? target : this; }
         Unit* GetMover() const { return m_mover; }
-        bool IsSelfMover() const { return m_mover == this; }// normal case for player not controlling other unit        
+        bool IsSelfMover() const { return m_mover == this; }// normal case for player not controlling other unit
         bool IsNextRelocationIgnored() const { return m_bNextRelocationsIgnored ? true : false; }
         void SetNextRelocationsIgnoredCount(uint32 count) { m_bNextRelocationsIgnored = count; }
         void DoIgnoreRelocation() { if (m_bNextRelocationsIgnored) --m_bNextRelocationsIgnored; }
@@ -2291,7 +2304,7 @@ class MANGOS_DLL_SPEC Player final: public Unit
         RestType rest_type;
         ////////////////////Rest System/////////////////////
 
-        uint32 m_resetTalentsCost;
+        uint32 m_resetTalentsMultiplier;
         time_t m_resetTalentsTime;
         uint32 m_usedTalentCount;
 
@@ -2315,6 +2328,12 @@ class MANGOS_DLL_SPEC Player final: public Unit
         uint32 m_gmInvisibilityLevel;
         uint32 m_currentTicketCounter;
         bool m_smartInstanceRebind;
+
+        // to fix an 1.12 client problem with transports
+        // sometimes they need a refresh before being usable
+        bool m_justBoarded;
+        void SetJustBoarded(bool hasBoarded) { m_justBoarded = hasBoarded; }
+        bool HasJustBoarded() { return m_justBoarded; }
 
     private:
         // internal common parts for CanStore/StoreItem functions
@@ -2371,6 +2390,8 @@ class MANGOS_DLL_SPEC Player final: public Unit
         // Current teleport data
         WorldLocation m_teleport_dest;
         uint32 m_teleport_options;
+        std::function<void()> m_teleportRecover;
+        std::function<void()> m_teleportRecoverDelayed;
         bool mSemaphoreTeleport_Near;
         bool mSemaphoreTeleport_Far;
 

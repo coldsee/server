@@ -1,8 +1,6 @@
 /*
  * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
  * Copyright (C) 2009-2011 MaNGOSZero <https://github.com/mangos/zero>
- * Copyright (C) 2011-2016 Nostalrius <https://nostalrius.org>
- * Copyright (C) 2016-2017 Elysium Project <https://github.com/elysium-project>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -352,9 +350,18 @@ void ScriptMgr::LoadScripts(ScriptMapMap& scripts, const char* tablename)
                 }
                 break;
             }
-            case SCRIPT_COMMAND_DESPAWN_SELF:
+            case SCRIPT_COMMAND_DESPAWN_CREATURE:
             {
-                // for later, we might consider despawn by database guid, and define in datalong2 as option to despawn self.
+                if (tmp.despawn.creatureEntry && !ObjectMgr::GetCreatureTemplate(tmp.despawn.creatureEntry))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong2 = %u in SCRIPT_COMMAND_DESPAWN_CREATURE for script id %u, but this creature_template does not exist.", tablename, tmp.despawn.creatureEntry, tmp.id);
+                    continue;
+                }
+                if (tmp.despawn.creatureEntry && !tmp.despawn.searchRadius)
+                {
+                    sLog.outErrorDb("Table `%s` has datalong2 = %u in SCRIPT_COMMAND_DESPAWN_CREATURE for script id %u, but search radius is too small (datalong3 = %u).", tablename, tmp.despawn.creatureEntry, tmp.id, tmp.despawn.searchRadius);
+                    continue;
+                }
                 break;
             }
             case SCRIPT_COMMAND_PLAY_MOVIE:
@@ -558,6 +565,90 @@ void ScriptMgr::LoadScripts(ScriptMapMap& scripts, const char* tablename)
                 }
                 break;
             }
+            case SCRIPT_COMMAND_MODIFY_NPC_FLAGS:
+            {
+                if (tmp.npcFlag.creatureEntry && !ObjectMgr::GetCreatureTemplate(tmp.npcFlag.creatureEntry))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong3 = %u in SCRIPT_COMMAND_MODIFY_NPC_FLAGS for script id %u, but this creature_template does not exist.", tablename, tmp.npcFlag.creatureEntry, tmp.id);
+                    continue;
+                }
+                if (tmp.npcFlag.creatureEntry && !tmp.npcFlag.searchRadius)
+                {
+                    sLog.outErrorDb("Table `%s` has datalong3 = %u in SCRIPT_COMMAND_MODIFY_NPC_FLAGS for script id %u, but search radius is too small (datalong4 = %u).", tablename, tmp.npcFlag.creatureEntry, tmp.id, tmp.npcFlag.searchRadius);
+                    continue;
+                }
+                break;
+            }
+            case SCRIPT_COMMAND_SEND_TAXI_PATH:
+            {
+                if (!sTaxiPathStore.LookupEntry(tmp.sendTaxiPath.taxiPathId))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong = %u in SCRIPT_COMMAND_SEND_TAXI_PATH for script id %u, but this taxi path does not exist.", tablename, tmp.sendTaxiPath.taxiPathId, tmp.id);
+                    continue;
+                }
+                break;
+            }
+            case SCRIPT_COMMAND_TERMINATE_SCRIPT:
+            {
+                if (tmp.terminateScript.creatureEntry && !ObjectMgr::GetCreatureTemplate(tmp.terminateScript.creatureEntry))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong = %u in SCRIPT_COMMAND_TERMINATE_SCRIPT for script id %u, but this npc entry does not exist.", tablename, tmp.terminateScript.creatureEntry, tmp.id);
+                    continue;
+                }
+                if (tmp.terminateScript.creatureEntry && !tmp.terminateScript.searchRadius)
+                {
+                    sLog.outErrorDb("Table `%s` has datalong = %u in  SCRIPT_COMMAND_TERMINATE_SCRIPT for script id %u, but search radius is too small (datalong2 = %u).", tablename, tmp.terminateScript.creatureEntry, tmp.id, tmp.terminateScript.searchRadius);
+                    continue;
+                }
+                break;
+            }
+            case SCRIPT_COMMAND_ENTER_EVADE_MODE:
+            {
+                if (tmp.enterEvadeMode.creatureEntry && !ObjectMgr::GetCreatureTemplate(tmp.enterEvadeMode.creatureEntry))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong = %u in SCRIPT_COMMAND_ENTER_EVADE_MODE for script id %u, but this creature_template does not exist.", tablename, tmp.enterEvadeMode.creatureEntry, tmp.id);
+                    continue;
+                }
+                if (tmp.enterEvadeMode.creatureEntry && !tmp.enterEvadeMode.searchRadius)
+                {
+                    sLog.outErrorDb("Table `%s` has datalong = %u in SCRIPT_COMMAND_ENTER_EVADE_MODE for script id %u, but search radius is too small (datalong2 = %u).", tablename, tmp.enterEvadeMode.creatureEntry, tmp.id, tmp.enterEvadeMode.searchRadius);
+                    continue;
+                }
+                break;
+            }
+            case SCRIPT_COMMAND_TERMINATE_COND:
+            {
+                if (!sConditionStorage.LookupEntry<PlayerCondition>(tmp.terminateCond.conditionId))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong = %u in SCRIPT_COMMAND_TERMINATE_COND for script id %u, but this condition_id does not exist.", tablename, tmp.terminateCond.conditionId, tmp.id);
+                    continue;
+                }
+                if (tmp.terminateCond.failQuest && !sObjectMgr.GetQuestTemplate(tmp.terminateCond.failQuest))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong2 = %u in SCRIPT_COMMAND_TERMINATE_COND for script id %u, but this questId does not exist.", tablename, tmp.terminateCond.failQuest, tmp.id);
+                    continue;
+                }
+                break;
+            }
+            case SCRIPT_COMMAND_TURN_TO:
+            {
+                if (tmp.turnTo.facingLogic > 2)
+                {
+                    sLog.outErrorDb("Table `%s` using unknown option in datalong (%u) in SCRIPT_COMMAND_TURN_TO for script id %u", tablename, tmp.turnTo.facingLogic, tmp.id);
+                    continue;
+                }
+                if (tmp.turnTo.creatureEntry && !ObjectMgr::GetCreatureTemplate(tmp.turnTo.creatureEntry))
+                {
+                    sLog.outErrorDb("Table `%s` has datalong3 = %u in SCRIPT_COMMAND_TURN_TO for script id %u, but this npc entry does not exist.", tablename, tmp.turnTo.creatureEntry, tmp.id);
+                    continue;
+                }
+                if (tmp.turnTo.creatureEntry && !tmp.turnTo.searchRadius)
+                {
+                    sLog.outErrorDb("Table `%s` has datalong3 = %u in  SCRIPT_COMMAND_TURN_TO for script id %u, but search radius is too small (datalong4 = %u).", tablename, tmp.turnTo.creatureEntry, tmp.id, tmp.turnTo.searchRadius);
+                    continue;
+                }
+                break;
+            }
         }
 
         if (scripts.find(tmp.id) == scripts.end())
@@ -682,7 +773,7 @@ void ScriptMgr::LoadCreatureMovementScripts()
 
 void ScriptMgr::LoadDbScriptStrings()
 {
-    sObjectMgr.LoadMangosStrings(WorldDatabase, "db_script_string", MIN_DB_SCRIPT_STRING_ID, MAX_DB_SCRIPT_STRING_ID);
+    sObjectMgr.LoadMangosStrings(WorldDatabase, "db_script_string", MIN_DB_SCRIPT_STRING_ID, MAX_DB_SCRIPT_STRING_ID, false);
 
     std::set<int32> ids;
 
@@ -790,7 +881,7 @@ void ScriptMgr::LoadEventIdScripts()
     BarGoLink bar(result->GetRowCount());
 
     std::set<uint32> eventIds;                              // Store possible event ids
-    
+
     CollectPossibleEventIds(eventIds);
 
     do
@@ -1241,7 +1332,7 @@ void ScriptMgr::LoadDatabase()
 void ScriptMgr::LoadScriptTexts()
 {
     sLog.outString("Loading Script Texts...");
-    LoadMangosStrings(WorldDatabase, "script_texts", TEXT_SOURCE_TEXT_START, TEXT_SOURCE_TEXT_END);
+    LoadMangosStrings(WorldDatabase, "script_texts", TEXT_SOURCE_TEXT_START, TEXT_SOURCE_TEXT_END, true);
 
     QueryResult* result = WorldDatabase.PQuery("SELECT entry, sound, type, language, emote FROM script_texts WHERE entry BETWEEN %i AND %i", TEXT_SOURCE_GOSSIP_END, TEXT_SOURCE_TEXT_START);
 
@@ -1303,7 +1394,7 @@ void ScriptMgr::LoadScriptTexts()
 void ScriptMgr::LoadScriptTextsCustom()
 {
     sLog.outString("Loading Custom Texts...");
-    LoadMangosStrings(WorldDatabase, "custom_texts", TEXT_SOURCE_CUSTOM_START, TEXT_SOURCE_CUSTOM_END);
+    LoadMangosStrings(WorldDatabase, "custom_texts", TEXT_SOURCE_CUSTOM_START, TEXT_SOURCE_CUSTOM_END, true);
 
     QueryResult* result = WorldDatabase.PQuery("SELECT entry, sound, type, language, emote FROM custom_texts WHERE entry BETWEEN %i AND %i", TEXT_SOURCE_CUSTOM_END, TEXT_SOURCE_CUSTOM_START);
 
@@ -1581,7 +1672,15 @@ void DoScriptText(int32 iTextEntry, WorldObject* pSource, Unit* pTarget)
     if (pData->SoundId)
     {
         if (GetSoundEntriesStore()->LookupEntry(pData->SoundId))
-            pSource->PlayDirectSound(pData->SoundId);
+        {
+            if(pData->Type == CHAT_TYPE_ZONE_YELL)
+            {
+                if(Map* pZone = pSource->GetMap())
+                    pZone->PlayDirectSoundToMap(pData->SoundId);
+            }
+            else
+                pSource->PlayDirectSound(pData->SoundId);
+        }
         else
             sLog.outError("DoScriptText entry %i tried to process invalid sound id %u.", iTextEntry, pData->SoundId);
     }
@@ -1622,6 +1721,62 @@ void DoScriptText(int32 iTextEntry, WorldObject* pSource, Unit* pTarget)
             pSource->MonsterYellToZone(iTextEntry, pData->Language, pTarget);
             break;
     }
+}
+
+
+/**
+ * Function that either simulates or does script text for a map
+ *
+ * @param iTextEntry Entry of the text, stored in SD2-database, only type CHAT_TYPE_ZONE_YELL supported
+ * @param uiCreatureEntry Id of the creature of whom saying will be simulated
+ * @param pMap Given Map on which the map-wide text is displayed
+ * @param pCreatureSource Can be nullptr. If pointer to Creature is given, then the creature does the map-wide text
+ * @param pTarget Can be nullptr. Possible target for the text
+ */
+void DoOrSimulateScriptTextForMap(int32 iTextEntry, uint32 uiCreatureEntry, Map* pMap, Creature* pCreatureSource /*=nullptr*/, Unit* pTarget /*=nullptr*/)
+{
+    if (!pMap)
+    {
+	sLog.outError("DoOrSimulateScriptTextForMap entry %i, invalid Map pointer.", iTextEntry);
+	return;
+    }
+
+    if (iTextEntry >= 0)
+    {
+	sLog.outError("DoOrSimulateScriptTextForMap with source entry %u for map %u attempts to process text entry %i, but text entry must be negative.", uiCreatureEntry, pMap->GetId(), iTextEntry);
+	return;
+    }
+
+    CreatureInfo const* pInfo = GetCreatureTemplateStore(uiCreatureEntry);
+    if (!pInfo)
+    {
+	sLog.outError("DoOrSimulateScriptTextForMap has invalid source entry %u for map %u.", uiCreatureEntry, pMap->GetId());
+	return;
+    }
+
+    MangosStringLocale const* pData = sObjectMgr.GetMangosStringLocale(iTextEntry);
+    if (!pData)
+    {
+	sLog.outError("DoOrSimulateScriptTextForMap with source entry %u for map %u could not find text entry %i.", uiCreatureEntry, pMap->GetId(), iTextEntry);
+	return;
+    }
+
+    sLog.outDebug("SD2: DoOrSimulateScriptTextForMap: text entry=%i, Sound=%u, Type=%u, Language=%u, Emote=%u",
+	      iTextEntry, pData->SoundId, pData->Type, pData->LanguageId, pData->Emote);
+
+    if (pData->Type != CHAT_TYPE_ZONE_YELL)
+    {
+	sLog.outError("DoSimulateScriptTextForMap entry %i has not supported chat type %u.", iTextEntry, pData->Type);
+	return;
+    }
+
+    if (pData->SoundId)
+	pMap->PlayDirectSoundToMap(pData->SoundId);
+
+    if (pCreatureSource)                                // If provided pointer for sayer, use direct version
+	pMap->MonsterYellToMap(pCreatureSource->GetObjectGuid(), iTextEntry, pData->LanguageId, pTarget);
+    else                                                // Simulate yell
+	pMap->MonsterYellToMap(pInfo, iTextEntry, pData->LanguageId, pTarget);
 }
 
 void Script::RegisterSelf(bool bReportError)
@@ -1724,4 +1879,3 @@ void ScriptMgr::FillSpellSummary()
         }
     }
 }
-

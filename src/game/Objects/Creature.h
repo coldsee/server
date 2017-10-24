@@ -464,6 +464,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
 
         bool Create(uint32 guidlow, CreatureCreatePos& cPos, CreatureInfo const* cinfo, Team team = TEAM_NONE, const CreatureData *data = nullptr, GameEventCreatureData const* eventData = nullptr);
         bool LoadCreatureAddon(bool reload = false);
+        void UnloadCreatureAddon(const CreatureDataAddon* data);
 
         // CreatureGroups
         CreatureGroup* GetCreatureGroup() const { return _creatureGroup; }
@@ -512,7 +513,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
 
         bool CanWalk() const override { return GetCreatureInfo()->InhabitType & INHABIT_GROUND; }
         bool CanSwim() const override { return IsPet() || GetCreatureInfo()->InhabitType & INHABIT_WATER; }
-        bool CanFly()  const override { return GetCreatureInfo()->InhabitType & INHABIT_AIR; }
+        bool CanFly()  const override { return !IsPet() && GetCreatureInfo()->InhabitType & INHABIT_AIR; }
 
         void SetReactState(ReactStates st) { m_reactState = st; }
         ReactStates GetReactState() const { return m_reactState; }
@@ -622,6 +623,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
         bool lootForBody;
         bool lootForSkin;
         uint32 skinningForOthersTimer; // If == 0, then everyone can skin
+        bool lootForCreator = false;
 
         ObjectGuid GetLootRecipientGuid() const { return m_lootRecipientGuid; }
         uint32 GetLootGroupRecipientId() const { return m_lootGroupRecipientId; }
@@ -653,6 +655,8 @@ class MANGOS_DLL_SPEC Creature : public Unit
         bool HasSearchedAssistance() const { return m_AlreadySearchedAssistance; }
         bool CanAssistTo(const Unit* u, const Unit* enemy, bool checkfaction = true) const;
         bool CanInitiateAttack();
+
+        void SetTauntImmunity(bool immune);
 
         MovementGeneratorType GetDefaultMovementType() const { return m_defaultMovementType; }
         void SetDefaultMovementType(MovementGeneratorType mgt) { m_defaultMovementType = mgt; }

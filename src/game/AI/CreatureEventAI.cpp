@@ -1332,7 +1332,15 @@ void CreatureEventAI::DoScriptText(int32 textEntry, WorldObject* pSource, Unit* 
     if ((*i).second.SoundId)
     {
         if (GetSoundEntriesStore()->LookupEntry((*i).second.SoundId))
-            pSource->PlayDirectSound((*i).second.SoundId);
+        {
+            if((*i).second.Type == CHAT_TYPE_ZONE_YELL)
+            {
+                if(Map* pZone = pSource->GetMap())
+                    pZone->PlayDirectSoundToMap((*i).second.SoundId);
+            }
+            else
+                pSource->PlayDirectSound((*i).second.SoundId);
+        }
         else
             sLog.outErrorDb("CreatureEventAI: DoScriptText entry %i tried to process invalid sound id %u.", textEntry, (*i).second.SoundId);
     }
@@ -1419,7 +1427,7 @@ void CreatureEventAI::ReceiveEmote(Player* pPlayer, uint32 text_emote)
         if ((*itr).Event.event_type == EVENT_T_RECEIVE_EMOTE)
         {
             if ((*itr).Event.receive_emote.emoteId != text_emote)
-                return;
+                continue;
 
             PlayerCondition pcon(0, (*itr).Event.receive_emote.condition, (*itr).Event.receive_emote.conditionValue1, (*itr).Event.receive_emote.conditionValue2);
             if (pcon.Meets(pPlayer, m_creature->GetMap(), m_creature, CONDITION_FROM_EVENTAI))

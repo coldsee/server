@@ -694,7 +694,7 @@ bool IsExplicitNegativeTarget(uint32 targetA)
     return false;
 }
 
-bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
+bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex, Unit* caster, Unit* victim)
 {
     // Nostalrius (SpellMod)
     if (spellproto->Custom & SPELL_CUSTOM_POSITIVE)
@@ -704,7 +704,7 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
 
     // Hellfire. Damages the caster, but is still positive !
     // (Has same SpellFamilyFlags as Soul Fire oO)
-    if (spellproto->IsFitToFamily<SPELLFAMILY_WARLOCK, CF_WARLOCK_HELLFIRE>() && spellproto->SpellIconID == 937)
+    if (spellproto->IsFitToFamily<SPELLFAMILY_WARLOCK, CF_WARLOCK_HELLFIRE>() && spellproto->SpellIconID == 937 && spellproto->SpellVisual == 5423)
         return true;
 
     switch (spellproto->Effect[effIndex])
@@ -729,10 +729,17 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
             return true;
         // Negative Effects
         case SPELL_EFFECT_INSTAKILL:
+            // Suicide is a positive spell - ex. Garr Massive Eruption
+            if (spellproto->EffectImplicitTargetA[effIndex] == TARGET_SELF && spellproto->EffectImplicitTargetB[effIndex] == TARGET_NONE)
+                return true;
             // Sacrifice is a positive spell - for the warlock :)
             if (spellproto->IsFitToFamily<SPELLFAMILY_WARLOCK, CF_WARLOCK_VOIDWALKER_SPELLS>())
                 return true;
             return false;
+        // Dispel can be positive or negative depending on the target
+        case SPELL_EFFECT_DISPEL:
+            if (caster && victim)
+                return caster->IsFriendlyTo(victim);
 
         // non-positive aura use
         case SPELL_EFFECT_APPLY_AURA:
@@ -782,7 +789,6 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                         return true;                        // some expected positive spells have unclear target modes // maybe don't need this at all now that we don't check for what was SPELL_ATTR_EX_NEGATIVE
                     break;
                 case SPELL_AURA_ADD_TARGET_TRIGGER:
-                case SPELL_AURA_MOD_DETECT_RANGE:
                     return true;
                 case SPELL_AURA_PERIODIC_TRIGGER_SPELL:
                     if (spellproto->Id != spellproto->EffectTriggerSpell[effIndex])
@@ -826,6 +832,7 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                 case SPELL_AURA_PERIODIC_LEECH:
                 case SPELL_AURA_MOD_STALKED:
                 case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
+                case SPELL_AURA_MOD_DETECT_RANGE:
                     return false;
                 case SPELL_AURA_PERIODIC_DAMAGE:            // used in positive spells also.
                     // part of negative spell if casted at self (prevent cancel)
@@ -900,23 +907,23 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
     return true;
 }
 
-bool IsPositiveSpell(uint32 spellId)
+bool IsPositiveSpell(uint32 spellId, Unit* caster, Unit* victim)
 {
     SpellEntry const *spellproto = sSpellMgr.GetSpellEntry(spellId);
     if (!spellproto)
         return false;
 
-    return IsPositiveSpell(spellproto);
+    return IsPositiveSpell(spellproto, caster, victim);
 }
 
-bool IsPositiveSpell(SpellEntry const *spellproto)
+bool IsPositiveSpell(SpellEntry const *spellproto, Unit* caster, Unit* victim)
 {
     if (spellproto->Attributes & SPELL_ATTR_NEGATIVE)
         return false;
     // spells with at least one negative effect are considered negative
     // some self-applied spells have negative effects but in self casting case negative check ignored.
     for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
-        if (spellproto->Effect[i] && !IsPositiveEffect(spellproto, SpellEffectIndex(i)))
+        if (spellproto->Effect[i] && !IsPositiveEffect(spellproto, SpellEffectIndex(i), caster, victim))
             return false;
     return true;
 }
@@ -1655,9 +1662,6 @@ bool SpellMgr::IsSpellProcEventCanTriggeredBy(SpellProcEventEntry const * spellP
         }
     }
 
-    if (!(procFlags & (PROC_FLAG_ON_DO_PERIODIC | PROC_FLAG_ON_TAKE_PERIODIC)))
-        procExtra |= PROC_EX_NO_PERIODIC;
-
     // Check for extra req (if none) and hit/crit
     if (procEvent_procEx == PROC_EX_NONE)
     {
@@ -1669,11 +1673,14 @@ bool SpellMgr::IsSpellProcEventCanTriggeredBy(SpellProcEventEntry const * spellP
         if (procExtra & (PROC_EX_NORMAL_HIT | PROC_EX_CRITICAL_HIT))
             return true;
     }
-    else // all spells hits here only if resist/reflect/immune/evade
+    else // all spells hits here only if resist/reflect/immune/evade/periodic
     {
         // Exist req for PROC_EX_EX_TRIGGER_ALWAYS
         if (procEvent_procEx & PROC_EX_EX_TRIGGER_ALWAYS)
             return true;
+        // Exist req for PROC_EX_NO_PERIODIC
+        if ((procEvent_procEx & PROC_EX_NO_PERIODIC) && (procFlags & (PROC_FLAG_ON_DO_PERIODIC | PROC_FLAG_ON_TAKE_PERIODIC)))
+            return false;
         // Check Extra Requirement like (hit/crit/miss/resist/parry/dodge/block/immune/reflect/absorb and other)
         if (procEvent_procEx & procExtra)
             return true;
@@ -2053,7 +2060,9 @@ bool SpellMgr::IsRankSpellDueToSpell(SpellEntry const *spellInfo_1, uint32 spell
             spellInfo_1->SpellFamilyName != SPELLFAMILY_GENERIC &&
             spellInfo_1->Effect[0] == spellInfo_2->Effect[0] &&
             spellInfo_1->EffectApplyAuraName[0] == spellInfo_2->EffectApplyAuraName[0] &&
-            spellInfo_1->SpellIconID > 1)
+            spellInfo_1->SpellIconID > 1 &&
+            (spellInfo_1->EffectApplyAuraName[0] != SPELL_AURA_ADD_FLAT_MODIFIER ||
+             spellInfo_1->EffectMiscValue[0] == spellInfo_2->EffectMiscValue[0]))
         return true;
     return GetFirstSpellInChain(spellInfo_1->Id) == GetFirstSpellInChain(spellId_2);
 }

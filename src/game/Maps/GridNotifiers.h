@@ -1199,20 +1199,41 @@ namespace MaNGOS
 
     class AllCreaturesOfEntryInRange
     {
-        public:
-            AllCreaturesOfEntryInRange(const WorldObject* pObject, uint32 uiEntry, float fMaxRange) : m_pObject(pObject), m_uiEntry(uiEntry), m_fRange(fMaxRange) {}
-            bool operator() (Unit* pUnit)
-            {
-                if (pUnit->GetEntry() == m_uiEntry && m_pObject->IsWithinDist(pUnit,m_fRange,false))
+    public:
+        AllCreaturesOfEntryInRange(const WorldObject* pObject, uint32 uiEntry, float fMaxRange) : m_pObject(pObject), m_uiEntry(uiEntry), m_fRange(fMaxRange) {}
+        bool operator() (Unit* pUnit)
+        {
+            if (pUnit->GetEntry() == m_uiEntry && m_pObject->IsWithinDist(pUnit, m_fRange, false))
+                return true;
+
+            return false;
+        }
+
+    private:
+        const WorldObject* m_pObject;
+        uint32 m_uiEntry;
+        float m_fRange;
+    };
+
+    class AllCreaturesMatchingOneEntryInRange
+    {
+    public:
+        AllCreaturesMatchingOneEntryInRange(const WorldObject* pObject, const std::vector<uint32>& entries, float fMaxRange) 
+            : m_pObject(pObject), entries(entries), m_fRange(fMaxRange) {}
+        bool operator() (Unit* pUnit)
+        {
+            for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
+                if (pUnit->GetEntry() == (*it) && m_pObject->IsWithinDist(pUnit, m_fRange, false)) {
                     return true;
-
-                return false;
+                }
             }
+            return false;
+        }
 
-        private:
-            const WorldObject* m_pObject;
-            uint32 m_uiEntry;
-            float m_fRange;
+    private:
+        const WorldObject* m_pObject;
+        std::vector<uint32> entries;
+        float m_fRange;
     };
 
     class PlayerAtMinimumRangeAway
@@ -1267,7 +1288,7 @@ namespace MaNGOS
             }
             bool operator()(Unit* u)
             {
-                if (!u->IsHostileTo(_me))
+                if (!_me->IsHostileTo(u))
                     return false;
 
                 if (!u->isVisibleForOrDetect(_me, _me, false))
